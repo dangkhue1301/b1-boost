@@ -20,11 +20,12 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const response = await built.default.fetch(new Request("https://b1-boost-daily-english.nguyendang13012007.chatgpt.site/"), env, ctx);
 if (!response.ok) throw new Error(`Static export failed with ${response.status}`);
 
+const html = await response.text();
 await mkdir(resolve(root, "dist/client"), { recursive: true });
-await writeFile(clientIndex, await response.text(), "utf8");
+await writeFile(clientIndex, html, "utf8");
 await writeFile(
   serverEntry,
-  `export default {\n  async fetch(request, env) {\n    const url = new URL(request.url);\n    if (url.pathname === "/") {\n      return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));\n    }\n    return env.ASSETS.fetch(request);\n  }\n};\n`,
+  `const INDEX_HTML = ${JSON.stringify(html)};\n\nexport default {\n  async fetch(request, env) {\n    const url = new URL(request.url);\n    if (url.pathname === "/" || url.pathname === "/index.html") {\n      return new Response(INDEX_HTML, {\n        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },\n      });\n    }\n    return env.ASSETS.fetch(request);\n  }\n};\n`,
   "utf8",
 );
 
