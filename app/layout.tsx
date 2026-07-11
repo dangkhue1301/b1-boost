@@ -5,7 +5,7 @@ const title = "B1 Boost — Daily English Practice";
 const description = "Luyện ngữ pháp và từ vựng Destination B1 mỗi ngày với streak, tracking và lộ trình mở khóa.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://b1-boost-daily-english.nguyendang13012007.chatgpt.site"),
+  metadataBase: new URL("https://dangkhue1301.github.io/b1-boost/"),
   title,
   description,
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },

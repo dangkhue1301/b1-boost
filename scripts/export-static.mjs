@@ -20,7 +20,11 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const response = await built.default.fetch(new Request("https://b1-boost-daily-english.nguyendang13012007.chatgpt.site/"), env, ctx);
 if (!response.ok) throw new Error(`Static export failed with ${response.status}`);
 
-const html = await response.text();
+const pagesBase = "/b1-boost";
+const html = (await response.text())
+  .replaceAll('"/assets/', `"${pagesBase}/assets/`)
+  .replaceAll('"/favicon.svg"', `"${pagesBase}/favicon.svg"`)
+  .replaceAll('"/og.png"', `"${pagesBase}/og.png"`);
 await mkdir(resolve(root, "dist/client"), { recursive: true });
 await writeFile(clientIndex, html, "utf8");
 await writeFile(
