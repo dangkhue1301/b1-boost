@@ -1,71 +1,427 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { grammarUnits, stages, vocabTopics, type GrammarUnit, type VocabTopic } from "./content";
 
 type View = "home" | "grammar" | "vocab" | "progress" | "teacher";
-type Progress = { date:string; grammarDone:number; vocabDone:number; grammarGoal:number; vocabGoal:number; xp:number; streak:number; unlockedStage:number; correct:number; total:number; weekly:number[]; weak:string[] };
-type Question = { type:string; prompt:string; answer:string; hint:string; choices?:string[] };
-type Practice = { mode:"grammar"|"vocab"; title:string; unit:number; question:Question; number:number; correct:number; answered:boolean; wasCorrect:boolean; response:string; explanation:string; sourceIndex:number };
+type Progress = {
+  date: string;
+  grammarDone: number;
+  vocabDone: number;
+  grammarGoal: number;
+  vocabGoal: number;
+  xp: number;
+  streak: number;
+  unlockedStage: number;
+  correct: number;
+  total: number;
+  weekly: number[];
+  weak: string[];
+  lastGoalDate: string;
+};
+type Question = { type: string; prompt: string; answer: string; hint: string; choices?: string[] };
+type Practice = {
+  mode: "grammar" | "vocab";
+  title: string;
+  unit: number;
+  question: Question;
+  number: number;
+  correct: number;
+  answered: boolean;
+  wasCorrect: boolean;
+  response: string;
+  explanation: string;
+  sourceIndex: number;
+};
 
-const dateKey=()=>{const d=new Date();return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`};
-const initial:Progress={date:dateKey(),grammarDone:0,vocabDone:0,grammarGoal:5,vocabGoal:3,xp:0,streak:0,unlockedStage:1,correct:0,total:0,weekly:[0,0,0,0,0,0,0],weak:[]};
-const dayLabels=["T2","T3","T4","T5","T6","T7","CN"];
-const pick=<T,>(a:T[])=>a[Math.floor(Math.random()*a.length)];
-const shuffle=<T,>(a:T[])=>[...a].sort(()=>Math.random()-.5);
-const norm=(s:string)=>s.toLowerCase().replace(/[’']/g,"'").replace(/[.,!?]/g,"").replace(/\s+/g," ").trim();
+const dateKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+};
+const initial: Progress = {
+  date: dateKey(), grammarDone: 0, vocabDone: 0, grammarGoal: 5, vocabGoal: 3,
+  xp: 0, streak: 0, unlockedStage: 1, correct: 0, total: 0,
+  weekly: [0, 0, 0, 0, 0, 0, 0], weak: [], lastGoalDate: "",
+};
+const dayLabels = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const pick = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
+const shuffle = <T,>(items: T[]) => [...items].sort(() => Math.random() - 0.5);
+const norm = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/[.,!?]/g, "").replace(/\s+/g, " ").trim();
 
-function grammarQuestion(unit:GrammarUnit):Question{
-  if(unit.unit===1&&Math.random()>.35){
-    const data=pick([
-      ["Mia","study","studies","is studying"],["Leo","play","plays","is playing"],["My brother","watch","watches","is watching"],["They","study","study","are studying"],["We","play","play","are playing"]
-    ]); const ongoing=Math.random()>.5;
-    return{type:"Chia động từ · random",prompt:`${data[0]} ___ (${data[1]}) ${pick(ongoing?["right now","at the moment","today"]:["every afternoon","on Saturdays","after school"])}.`,answer:ongoing?data[3]:data[2],hint:ongoing?"Việc đang diễn ra/tạm thời.":"Thói quen lặp lại."};
+function grammarQuestion(unit: GrammarUnit): Question {
+  if (unit.unit === 1 && Math.random() > 0.35) {
+    const data = pick([
+      ["Mia", "study", "studies", "is studying"],
+      ["Leo", "play", "plays", "is playing"],
+      ["My brother", "watch", "watches", "is watching"],
+      ["They", "study", "study", "are studying"],
+      ["We", "play", "play", "are playing"],
+    ]);
+    const ongoing = Math.random() > 0.5;
+    return {
+      type: "Chia động từ · câu ngẫu nhiên",
+      prompt: `${data[0]} ___ (${data[1]}) ${pick(ongoing ? ["right now", "at the moment", "today"] : ["every afternoon", "on Saturdays", "after school"])}.`,
+      answer: ongoing ? data[3] : data[2],
+      hint: ongoing ? "Việc đang diễn ra hoặc chỉ mang tính tạm thời." : "Một thói quen được lặp lại.",
+    };
   }
-  if(unit.unit===2&&Math.random()>.45){const name=pick(["Mia","Leo","Nora","The students","My cousins"]),plural=/students|cousins/.test(name),v=pick([["study","studying"],["play","playing"],["cook","cooking"]]);return{type:"Chia động từ · random",prompt:`${name} ___ (${v[0]}) at 8 p.m. when the lights went out.`,answer:`${plural?"were":"was"} ${v[1]}`,hint:"Hành động nền trong quá khứ."}}
-  return{...pick(unit.prompts)};
-}
-function vocabQuestion(topic:VocabTopic):Question{const t=pick(topic.words),d=shuffle(topic.words.filter(w=>w.word!==t.word)).slice(0,3).map(w=>w.word);return{type:"Chọn từ đúng",prompt:`Từ nào trong Unit ${topic.unit} có nghĩa là “${t.vi}”?`,answer:t.word,hint:`Đáp án thuộc topic ${topic.title}.`,choices:shuffle([t.word,...d])}}
-function makePractice(mode:"grammar"|"vocab",index:number):Practice{if(mode==="grammar"){const u=grammarUnits[index];return{mode,title:u.title,unit:u.unit,question:grammarQuestion(u),number:1,correct:0,answered:false,wasCorrect:false,response:"",explanation:"",sourceIndex:index}}const t=vocabTopics[index];return{mode,title:t.title,unit:t.unit,question:vocabQuestion(t),number:1,correct:0,answered:false,wasCorrect:false,response:"",explanation:"",sourceIndex:index}}
-function siu(){try{const C=window.AudioContext||(window as typeof window&{webkitAudioContext?:typeof AudioContext}).webkitAudioContext;if(C){const c=new C(),o=c.createOscillator(),g=c.createGain();o.frequency.setValueAtTime(320,c.currentTime);o.frequency.exponentialRampToValueAtTime(620,c.currentTime+.16);g.gain.setValueAtTime(.08,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.32);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.34)}if("speechSynthesis"in window){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance("Siuuu!");u.rate=.82;u.pitch=.72;u.volume=.78;speechSynthesis.speak(u)}}catch{}}
-
-export default function Home(){
-  const[view,setView]=useState<View>("home"),[p,setP]=useState<Progress>(initial),[ready,setReady]=useState(false),[practice,setPractice]=useState<Practice|null>(null),[theory,setTheory]=useState<GrammarUnit|null>(null),[sound,setSound]=useState(true),[toast,setToast]=useState(""),[party,setParty]=useState(false);
-  useEffect(()=>{try{const x=localStorage.getItem("b1-boost-progress");if(x){const q={...initial,...JSON.parse(x)};if(q.date!==dateKey()){q.date=dateKey();q.grammarDone=0;q.vocabDone=0}setP(q)}const s=localStorage.getItem("b1-boost-sound");if(s!==null)setSound(s==="true")}catch{}setReady(true)},[]);
-  useEffect(()=>{if(ready){localStorage.setItem("b1-boost-progress",JSON.stringify(p));localStorage.setItem("b1-boost-sound",String(sound))}},[p,sound,ready]);
-  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(""),2400);return()=>clearTimeout(t)},[toast]);
-  const gUnlocked=p.unlockedStage*2,vUnlocked=p.unlockedStage,daily=Math.round((Math.min(p.grammarDone,p.grammarGoal)+Math.min(p.vocabDone,p.vocabGoal))/(p.grammarGoal+p.vocabGoal)*100),accuracy=p.total?Math.round(p.correct/p.total*100):0;
-  const suggestedG=Math.min(gUnlocked-1,(p.grammarDone*3+p.vocabDone)%gUnlocked),suggestedV=Math.min(vUnlocked-1,(p.vocabDone+p.grammarDone)%vUnlocked);
-  const launch=(mode:"grammar"|"vocab",index?:number)=>{const max=mode==="grammar"?gUnlocked:vUnlocked;setPractice(makePractice(mode,Math.min(index??Math.floor(Math.random()*max),max-1)))};
-  const grade=(response:string)=>{if(!practice||practice.answered)return;const ok=practice.question.answer.split("|").map(norm).includes(norm(response));setPractice({...practice,answered:true,wasCorrect:ok,response,correct:practice.correct+(ok?1:0),explanation:ok?"Chuẩn rồi! Cách dùng và hình thức đều chính xác.":`Đáp án phù hợp: ${practice.question.answer}`});setP(o=>({...o,total:o.total+1,correct:o.correct+(ok?1:0),weak:ok?o.weak:[practice.title,...o.weak.filter(x=>x!==practice.title)].slice(0,4)}));if(ok){if(sound)siu();setParty(true);setTimeout(()=>setParty(false),900)}};
-  const submit=(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();grade(String(new FormData(e.currentTarget).get("answer")||""))};
-  const finish=()=>{if(!practice)return;const isG=practice.mode==="grammar";setP(o=>{const gd=o.grammarDone+(isG?1:0),vd=o.vocabDone+(isG?0:1),complete=gd>=o.grammarGoal&&vd>=o.vocabGoal,unlock=complete&&(o.grammarDone<o.grammarGoal||o.vocabDone<o.vocabGoal),w=[...o.weekly],di=(new Date().getDay()+6)%7;w[di]+=isG?40:30;return{...o,grammarDone:gd,vocabDone:vd,xp:o.xp+(isG?40:30),weekly:w,streak:complete?Math.max(1,o.streak):o.streak,unlockedStage:unlock?Math.min(14,o.unlockedStage+1):o.unlockedStage}});setToast(isG?"+40 XP · Xong 1 phần ngữ pháp":"+30 XP · Xong 1 topic từ vựng");setPractice(null);setView("home")};
-  const next=()=>{if(!practice)return;if(practice.number===4){finish();return}const q=practice.mode==="grammar"?grammarQuestion(grammarUnits[practice.sourceIndex]):vocabQuestion(vocabTopics[practice.sourceIndex]);setPractice({...practice,question:q,number:practice.number+1,answered:false,wasCorrect:false,response:"",explanation:""})};
-  const nav=(v:View)=>{setView(v);setPractice(null)};
-  return <div className="app-shell">
-    {party&&<div className="confetti">{Array.from({length:18},(_,i)=><i key={i} style={{"--i":i} as React.CSSProperties}/>)}</div>}{toast&&<div className="toast"><span>✓</span>{toast}</div>}
-    <header className="topbar"><button className="brand" onClick={()=>nav("home")}><span className="brand-mark">B1</span><span>B1 BOOST<small>DAILY ENGLISH</small></span></button><nav>{(["home","grammar","vocab","progress"]as View[]).map(v=><button key={v} className={view===v&&!practice?"active":""} onClick={()=>nav(v)}>{v==="home"?"Hôm nay":v==="grammar"?"Ngữ pháp":v==="vocab"?"Từ vựng":"Tiến độ"}</button>)}</nav><div className="top-actions"><button className={`sound-toggle ${sound?"on":""}`} onClick={()=>setSound(!sound)}>{sound?"🔊":"🔇"}</button><button className="streak-pill" onClick={()=>nav("progress")}><span>🔥</span><b>{p.streak}</b><small>streak</small></button><button className="avatar" onClick={()=>nav("teacher")}>GV</button></div></header>
-    <main>{practice?<PracticeScreen p={practice} close={()=>setPractice(null)} submit={submit} grade={grade} next={next}/>:view==="home"?<>
-      <section className="hero"><div className="hero-copy"><span className="eyebrow"><i/>KẾ HOẠCH HÔM NAY</span><h1>Chào cô!<br/><em>Giữ nhịp học</em> thật nhẹ nhàng.</h1><p>Hôm nay chỉ cần {p.grammarGoal} phần ngữ pháp và {p.vocabGoal} topic từ vựng. Mỗi lượt khoảng 3 phút.</p><div className="hero-actions"><button className="primary-btn" onClick={()=>launch(p.grammarDone<p.grammarGoal?"grammar":"vocab")}>Bắt đầu luyện ngay <span>→</span></button><button className="text-btn" onClick={()=>nav("grammar")}>Xem lộ trình</button></div><div className="micro-proof"><span>⚡</span><b>10.000+ biến thể</b><small>tạo từ ngân hàng mẫu theo 28 unit</small></div></div>
-      <div className="daily-card"><div className="score-head"><div><span>TIẾN ĐỘ NGÀY</span><strong>{daily}%</strong></div><span className="date-chip">Hôm nay</span></div><div className="big-ring" style={{"--value":`${daily*3.6}deg`}as React.CSSProperties}><div><strong>{p.grammarDone+p.vocabDone}</strong><span>/ {p.grammarGoal+p.vocabGoal}<small>lượt học</small></span></div></div><ProgressLine label="Ngữ pháp" icon="Aa" value={p.grammarDone} goal={p.grammarGoal} color="lime"/><ProgressLine label="Từ vựng" icon="W" value={p.vocabDone} goal={p.vocabGoal} color="coral"/><p className="encouragement">{daily===100?"Xuất sắc! Chặng mới đã mở khóa.":daily>50?"Qua nửa đường rồi, cố thêm một chút!":"Khởi động nhẹ, giữ streak thật lâu."}</p></div></section>
-      <section className="section-block"><div className="section-heading"><div><span className="eyebrow"><i/>LÀM GÌ TIẾP?</span><h2>Hai lượt luyện được đề xuất</h2></div><button className="text-btn" onClick={()=>nav("grammar")}>Xem tất cả unit →</button></div><div className="suggested-grid"><LessonCard mode="grammar" index={suggestedG} go={()=>launch("grammar",suggestedG)}/><LessonCard mode="vocab" index={suggestedV} go={()=>launch("vocab",suggestedV)}/></div></section>
-      <section className="insight-grid"><article className="insight-card streak-card"><span className="card-icon">🔥</span><div><small>CHUỖI HIỆN TẠI</small><strong>{p.streak} ngày</strong><p>Hoàn thành đủ mục tiêu để nối dài chuỗi.</p></div><div className="mini-days">{dayLabels.map((d,i)=><span key={d} className={p.weekly[i]>0?"done":""}>{d}<i>{p.weekly[i]>0?"✓":"·"}</i></span>)}</div></article><article className="insight-card"><span className="card-icon blue">◎</span><div><small>ĐỘ CHÍNH XÁC</small><strong>{accuracy}%</strong><p>{p.total?`${p.correct}/${p.total} câu trả lời đúng.`:"Làm câu đầu tiên để bắt đầu tracking."}</p></div><div className="accuracy-line"><i style={{width:`${accuracy}%`}}/></div></article><article className="insight-card weak-card"><span className="card-icon coral">↗</span><div><small>CẦN ÔN LẠI</small><strong>{p.weak[0]||"Chưa có"}</strong><p>{p.weak.length?"Hệ thống tự ghi lại chủ điểm hay sai.":"Điểm yếu sẽ xuất hiện sau các lượt luyện."}</p></div></article></section>
-    </>:view==="grammar"?<Library kind="grammar" unlocked={gUnlocked}>{stages.map((s,si)=>{const locked=si+1>p.unlockedStage;return <section className={`stage ${locked?"locked":""}`} key={s.id}><div className="stage-marker"><span>{locked?"⌁":s.id}</span><i/></div><div className="stage-content"><div className="stage-title"><span>CHẶNG {s.id}</span><h2>{s.grammar[0].title.split(",")[0]} → {s.vocab.title}</h2>{locked&&<small>Hoàn thành mục tiêu ngày để mở khóa</small>}</div><div className="unit-grid">{s.grammar.map(u=>{const idx=grammarUnits.findIndex(x=>x.unit===u.unit);return <article className="unit-card" key={u.unit}><span className="unit-chip">UNIT {u.unit}</span><h3>{u.title}</h3><p>{u.summary}</p><div className="unit-actions"><button disabled={locked} onClick={()=>setTheory(u)}>Lý thuyết</button><button disabled={locked} onClick={()=>launch("grammar",idx)}>Luyện 4 câu →</button></div></article>})}</div></div></section>})}</Library>
-    :view==="vocab"?<Library kind="vocab" unlocked={vUnlocked}><div className="topic-grid">{vocabTopics.map((t,i)=>{const locked=i>=p.unlockedStage;return <article className={`topic-card ${locked?"locked":""}`} key={t.unit}><div className="topic-top"><span>UNIT {t.unit}</span><b>{locked?"⌁":`${t.words.length} từ`}</b></div><h2>{t.title}</h2><div className="word-cloud">{t.words.slice(0,6).map(w=><span key={w.word}>{w.word}</span>)}</div><button disabled={locked} onClick={()=>launch("vocab",i)}>{locked?"Chưa mở khóa":"Luyện topic này →"}</button></article>})}</div></Library>
-    :view==="progress"?<ProgressPage p={p} accuracy={accuracy}/>:<TeacherPage p={p} setP={setP} toast={setToast}/>}</main>
-    {theory&&<TheoryModal unit={theory} close={()=>setTheory(null)} go={()=>{const i=grammarUnits.findIndex(u=>u.unit===theory.unit);setTheory(null);launch("grammar",i)}}/>}
-    <footer><span><b>B1 BOOST</b> · Học ít, nhớ lâu.</span><span>Dữ liệu lưu cục bộ · Âm thanh có thể tắt</span></footer>
-  </div>
+  if (unit.unit === 2 && Math.random() > 0.45) {
+    const name = pick(["Mia", "Leo", "Nora", "The students", "My cousins"]);
+    const plural = /students|cousins/.test(name);
+    const verb = pick([["study", "studying"], ["play", "playing"], ["cook", "cooking"]]);
+    return {
+      type: "Chia động từ · câu ngẫu nhiên",
+      prompt: `${name} ___ (${verb[0]}) at 8 p.m. when the lights went out.`,
+      answer: `${plural ? "were" : "was"} ${verb[1]}`,
+      hint: "Dùng thì quá khứ tiếp diễn cho hành động đang diễn ra tại một thời điểm trong quá khứ.",
+    };
+  }
+  return { ...pick(unit.prompts) };
 }
 
-function ProgressLine({label,icon,value,goal,color}:{label:string;icon:string;value:number;goal:number;color:string}){return <div className="score-line"><span className={`score-icon ${color}`}>{icon}</span><div><b>{label}<small>{value}/{goal}</small></b><span className="thin-track"><i className={color} style={{width:`${Math.min(100,value/goal*100)}%`}}/></span></div></div>}
-function LessonCard({mode,index,go}:{mode:"grammar"|"vocab";index:number;go:()=>void}){if(mode==="grammar"){const u=grammarUnits[index];return <article className="lesson-card grammar-card"><div className="lesson-number">{String(u.unit).padStart(2,"0")}</div><div className="lesson-content"><span className="tag">NGỮ PHÁP · 4 CÂU</span><h3>{u.title}</h3><p>{u.summary}</p><div className="lesson-meta"><span>~ 3 phút</span><span>+40 XP</span></div></div><button className="round-go" onClick={go}>→</button></article>}const t=vocabTopics[index];return <article className="lesson-card vocab-card"><div className="word-stack"><span>{t.words[0].word}</span><span>{t.words[2].word}</span><span>{t.words[5].word}</span></div><div className="lesson-content"><span className="tag">TỪ VỰNG · UNIT {t.unit}</span><h3>{t.title}</h3><p>Trắc nghiệm nghĩa tiếng Việt từ đúng bộ từ trong sách.</p><div className="lesson-meta"><span>~ 3 phút</span><span>+30 XP</span></div></div><button className="round-go" onClick={go}>→</button></article>}
-function PracticeScreen({p,close,submit,grade,next}:{p:Practice;close:()=>void;submit:(e:React.FormEvent<HTMLFormElement>)=>void;grade:(v:string)=>void;next:()=>void}){return <section className="practice-page"><div className="practice-top"><button onClick={close}>×</button><div><span style={{width:`${p.number/4*100}%`}}/></div><small>{p.number}/4</small></div><div className="practice-shell"><aside><span className={p.mode==="grammar"?"grammar-badge":"vocab-badge"}>{p.mode==="grammar"?"Aa":"W"}</span><small>UNIT {p.unit}</small><h2>{p.title}</h2><p>{p.mode==="grammar"?"Nhập câu trả lời đầy đủ. Dấu câu và chữ hoa không ảnh hưởng kết quả.":"Chọn đáp án khớp với nghĩa tiếng Việt."}</p><div className="set-score"><b>{p.correct}</b><span>câu đúng<br/>trong lượt này</span></div></aside><article className={`question-card ${p.answered?(p.wasCorrect?"correct":"wrong"):""}`}><div className="question-label"><span>{p.question.type}</span><small>MÃ CÂU {String(p.unit*173+p.number*41).padStart(4,"0")}</small></div><h1>{p.question.prompt}</h1>{p.question.choices?<div className="choice-grid">{p.question.choices.map((c,i)=><button key={c} disabled={p.answered} className={p.answered&&c===p.question.answer?"answer":p.answered&&c===p.response?"picked-wrong":""} onClick={()=>grade(c)}><span>{String.fromCharCode(65+i)}</span>{c}</button>)}</div>:<form onSubmit={submit}><label htmlFor="answer">Câu trả lời của em</label><div className="answer-row"><input id="answer" name="answer" autoFocus autoComplete="off" disabled={p.answered} placeholder="Nhập đáp án…"/><button disabled={p.answered}>Kiểm tra</button></div></form>}{!p.answered?<details className="hint"><summary>Gợi ý nhỏ</summary><p>{p.question.hint}</p></details>:<div className="feedback"><span>{p.wasCorrect?"SIUUU!":"Gần đúng rồi"}</span><div><b>{p.wasCorrect?"Quá chuẩn!":"Xem lại một chút nhé."}</b><p>{p.explanation}</p></div><button onClick={next}>{p.number===4?"Hoàn thành lượt":"Câu tiếp theo"} →</button></div>}</article></div></section>}
-function PageIntro({eyebrow,title,copy}:{eyebrow:string;title:string;copy:string}){return <div className="page-intro"><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{copy}</p></div>}
-function Library({kind,unlocked,children}:{kind:"grammar"|"vocab";unlocked:number;children:React.ReactNode}){return <section className="page-wrap library-page"><PageIntro eyebrow={kind==="grammar"?"LỘ TRÌNH NGỮ PHÁP":"14 TOPIC TỪ VỰNG"} title={kind==="grammar"?"Hiểu quy tắc. Luyện thật chắc.":"Từ trong sách. Câu hỏi mới mỗi lần."} copy={kind==="grammar"?`${unlocked}/28 unit đang mở. Mỗi unit có lý thuyết tóm tắt và nhiều kiểu câu luyện.`:`${unlocked}/14 topic đang mở. Mỗi topic dùng đúng nhóm từ của Destination B1.`}/>{children}</section>}
-function Metric({value,label,accent}:{value:string;label:string;accent:string}){return <article className={`metric ${accent}`}><strong>{value}</strong><span>{label}</span></article>}
-function ProgressPage({p,accuracy}:{p:Progress;accuracy:number}){return <section className="page-wrap progress-page"><PageIntro eyebrow="TIẾN ĐỘ CÁ NHÂN" title="Nhìn thấy từng bước tiến." copy="Mọi lượt học được lưu ngay trên thiết bị này — không cần tài khoản."/><div className="metric-grid"><Metric value={`${p.xp}`} label="Tổng XP" accent="lime"/><Metric value={`${p.streak}`} label="Streak ngày" accent="orange"/><Metric value={`${accuracy}%`} label="Độ chính xác" accent="blue"/><Metric value={`${p.unlockedStage}/14`} label="Chặng đã mở" accent="coral"/></div><div className="progress-layout"><article className="chart-card"><div className="card-heading"><div><small>7 NGÀY GẦN ĐÂY</small><h2>Nhịp học trong tuần</h2></div><span>{p.weekly.reduce((a,b)=>a+b,0)} XP</span></div><div className="bar-chart">{p.weekly.map((v,i)=><div key={dayLabels[i]}><span>{v||""}</span><i style={{height:`${Math.max(8,Math.min(100,v/2))}%`}}/><small>{dayLabels[i]}</small></div>)}</div></article><article className="focus-card"><small>GỢI Ý ÔN TẬP</small><h2>Điểm cần chú ý</h2>{p.weak.length?p.weak.map((x,i)=><div className="focus-row" key={x}><span>{i+1}</span><div><b>{x}</b><small>Xuất hiện trong câu trả lời sai gần đây</small></div></div>):<div className="empty-focus"><span>◎</span><b>Chưa có dữ liệu</b><p>Hoàn thành một lượt để hệ thống phân tích.</p></div>}</article></div></section>}
-function TeacherPage({p,setP,toast}:{p:Progress;setP:React.Dispatch<React.SetStateAction<Progress>>;toast:(s:string)=>void}){const goal=(k:"grammarGoal"|"vocabGoal",d:number)=>setP(o=>({...o,[k]:Math.max(k==="grammarGoal"?3:2,Math.min(k==="grammarGoal"?8:4,o[k]+d))}));const reset=()=>{if(confirm("Xóa toàn bộ streak, XP và tiến độ trên thiết bị này?")){setP({...initial,date:dateKey()});toast("Đã đặt lại tiến độ.")}};return <section className="page-wrap teacher-page"><PageIntro eyebrow="GÓC GIÁO VIÊN" title="Thiết lập vừa đủ, theo dõi thật nhanh." copy="Các thay đổi chỉ áp dụng trên thiết bị này, phù hợp cho một học sinh hoặc một máy ở lớp."/><div className="teacher-grid"><Setting icon="Aa" label="MỤC TIÊU NGỮ PHÁP" title={`${p.grammarGoal} phần / ngày`} copy="Mỗi phần 4 câu: chia động từ, sửa lỗi, viết lại và điền từ."><Counter value={p.grammarGoal} minus={()=>goal("grammarGoal",-1)} plus={()=>goal("grammarGoal",1)}/></Setting><Setting icon="W" label="MỤC TIÊU TỪ VỰNG" title={`${p.vocabGoal} topic / ngày`} copy="Mỗi topic 4 câu trắc nghiệm từ đúng danh sách Destination B1."><Counter value={p.vocabGoal} minus={()=>goal("vocabGoal",-1)} plus={()=>goal("vocabGoal",1)}/></Setting><article className="setting-card wide"><div><small>MỞ KHÓA LỘ TRÌNH</small><h2>Đang ở chặng {p.unlockedStage}/14</h2><p>Mỗi chặng gom 2 unit ngữ pháp và 1 unit từ vựng theo đúng thứ tự sách.</p><div className="stage-dots">{stages.map(s=><i key={s.id} className={s.id<=p.unlockedStage?"done":""}/>)}</div></div><div className="teacher-actions"><button disabled={p.unlockedStage>=14} onClick={()=>setP(o=>({...o,unlockedStage:Math.min(14,o.unlockedStage+1)}))}>Mở chặng tiếp</button><button className="danger" onClick={reset}>Đặt lại dữ liệu</button></div></article></div><div className="source-note"><span>✓</span><div><b>Nguồn nội dung đã dùng</b><p>28 unit lý thuyết ngữ pháp và 14 topic từ vựng theo Destination B1. Câu luyện được tạo mới từ mẫu, không sao chép bài tập trong sách.</p></div></div></section>}
-function Setting({icon,label,title,copy,children}:{icon:string;label:string;title:string;copy:string;children:React.ReactNode}){return <article className="setting-card"><span className="setting-icon">{icon}</span><div><small>{label}</small><h2>{title}</h2><p>{copy}</p></div>{children}</article>}
-function Counter({value,minus,plus}:{value:number;minus:()=>void;plus:()=>void}){return <div className="counter"><button onClick={minus}>−</button><span>{value}</span><button onClick={plus}>+</button></div>}
-function TheoryModal({unit,close,go}:{unit:GrammarUnit;close:()=>void;go:()=>void}){return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><article className="theory-modal"><button className="modal-close" onClick={close}>×</button><span className="unit-chip">UNIT {unit.unit} · LÝ THUYẾT</span><h1>{unit.title}</h1><p className="lead">{unit.summary}</p><div className="rule-box"><small>NHỚ 3 Ý CHÍNH</small>{unit.rules.map((r,i)=><div key={r}><span>{i+1}</span><p>{r}</p></div>)}</div><div className="example-box"><small>VÍ DỤ</small><p>{unit.example}</p></div><button className="primary-btn full" onClick={go}>Luyện unit này <span>→</span></button></article></div>}
+function vocabQuestion(topic: VocabTopic): Question {
+  const target = pick(topic.words);
+  const distractors = shuffle(topic.words.filter((word) => word.word !== target.word)).slice(0, 3).map((word) => word.word);
+  return {
+    type: "Chọn từ đúng",
+    prompt: `Từ nào trong Unit ${topic.unit} có nghĩa là “${target.vi}”?`,
+    answer: target.word,
+    hint: `Đáp án nằm trong chủ đề “${topic.title}”.`,
+    choices: shuffle([target.word, ...distractors]),
+  };
+}
+
+function makePractice(mode: "grammar" | "vocab", index: number): Practice {
+  if (mode === "grammar") {
+    const unit = grammarUnits[index];
+    return { mode, title: unit.title, unit: unit.unit, question: grammarQuestion(unit), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
+  }
+  const topic = vocabTopics[index];
+  return { mode, title: topic.title, unit: topic.unit, question: vocabQuestion(topic), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
+}
+
+function playSiu() {
+  try {
+    const Context = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (Context) {
+      const context = new Context();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.setValueAtTime(320, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(620, context.currentTime + 0.16);
+      gain.gain.setValueAtTime(0.08, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.32);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.34);
+    }
+    if ("speechSynthesis" in window) {
+      speechSynthesis.cancel();
+      const voice = new SpeechSynthesisUtterance("Siuuu!");
+      voice.rate = 0.82;
+      voice.pitch = 0.72;
+      voice.volume = 0.78;
+      speechSynthesis.speak(voice);
+    }
+  } catch { /* Âm thanh không ảnh hưởng tới việc học. */ }
+}
+
+export default function Home() {
+  const [view, setView] = useState<View>("home");
+  const [progress, setProgress] = useState<Progress>(initial);
+  const [ready, setReady] = useState(false);
+  const [practice, setPractice] = useState<Practice | null>(null);
+  const [theory, setTheory] = useState<GrammarUnit | null>(null);
+  const [sound, setSound] = useState(true);
+  const [toast, setToast] = useState("");
+  const [celebrate, setCelebrate] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("b1-boost-progress");
+      if (saved) {
+        const next = { ...initial, ...JSON.parse(saved) };
+        if (next.date !== dateKey()) {
+          next.date = dateKey();
+          next.grammarDone = 0;
+          next.vocabDone = 0;
+        }
+        setProgress(next);
+      }
+      const savedSound = localStorage.getItem("b1-boost-sound");
+      if (savedSound !== null) setSound(savedSound === "true");
+    } catch { /* Dùng dữ liệu mặc định nếu trình duyệt chặn lưu trữ. */ }
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    localStorage.setItem("b1-boost-progress", JSON.stringify(progress));
+    localStorage.setItem("b1-boost-sound", String(sound));
+  }, [progress, sound, ready]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 2600);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const grammarUnlocked = progress.unlockedStage * 2;
+  const vocabUnlocked = progress.unlockedStage;
+  const completed = Math.min(progress.grammarDone, progress.grammarGoal) + Math.min(progress.vocabDone, progress.vocabGoal);
+  const totalGoal = progress.grammarGoal + progress.vocabGoal;
+  const dailyPercent = Math.round((completed / totalGoal) * 100);
+  const accuracy = progress.total ? Math.round((progress.correct / progress.total) * 100) : 0;
+  const grammarLeft = Math.max(0, progress.grammarGoal - progress.grammarDone);
+  const vocabLeft = Math.max(0, progress.vocabGoal - progress.vocabDone);
+  const nextMode: "grammar" | "vocab" = grammarLeft > 0 ? "grammar" : "vocab";
+  const suggestedGrammar = Math.min(grammarUnlocked - 1, (progress.grammarDone * 3 + progress.vocabDone) % grammarUnlocked);
+  const suggestedVocab = Math.min(vocabUnlocked - 1, (progress.vocabDone + progress.grammarDone) % vocabUnlocked);
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit" }).format(new Date()), []);
+
+  const navigate = (nextView: View) => {
+    setView(nextView);
+    setPractice(null);
+  };
+
+  const launch = (mode: "grammar" | "vocab", index?: number) => {
+    const max = mode === "grammar" ? grammarUnlocked : vocabUnlocked;
+    const selected = Math.min(index ?? Math.floor(Math.random() * max), max - 1);
+    setPractice(makePractice(mode, selected));
+  };
+
+  const grade = (response: string) => {
+    if (!practice || practice.answered || !response.trim()) return;
+    const isCorrect = practice.question.answer.split("|").map(norm).includes(norm(response));
+    setPractice({
+      ...practice,
+      answered: true,
+      wasCorrect: isCorrect,
+      response,
+      correct: practice.correct + (isCorrect ? 1 : 0),
+      explanation: isCorrect ? "Đáp án và cách dùng đều chính xác." : `Đáp án phù hợp là: ${practice.question.answer}`,
+    });
+    setProgress((old) => ({
+      ...old,
+      total: old.total + 1,
+      correct: old.correct + (isCorrect ? 1 : 0),
+      weak: isCorrect ? old.weak : [practice.title, ...old.weak.filter((item) => item !== practice.title)].slice(0, 4),
+    }));
+    if (isCorrect) {
+      if (sound) playSiu();
+      setCelebrate(true);
+      setTimeout(() => setCelebrate(false), 900);
+    }
+  };
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    grade(String(new FormData(event.currentTarget).get("answer") || ""));
+  };
+
+  const finishPractice = () => {
+    if (!practice) return;
+    const grammarMode = practice.mode === "grammar";
+    setProgress((old) => {
+      const grammarDone = old.grammarDone + (grammarMode ? 1 : 0);
+      const vocabDone = old.vocabDone + (grammarMode ? 0 : 1);
+      const reachedGoal = grammarDone >= old.grammarGoal && vocabDone >= old.vocabGoal;
+      const firstCompletionToday = reachedGoal && old.lastGoalDate !== dateKey();
+      const weekly = [...old.weekly];
+      weekly[(new Date().getDay() + 6) % 7] += grammarMode ? 40 : 30;
+      return {
+        ...old,
+        grammarDone,
+        vocabDone,
+        xp: old.xp + (grammarMode ? 40 : 30),
+        weekly,
+        streak: firstCompletionToday ? old.streak + 1 : old.streak,
+        lastGoalDate: firstCompletionToday ? dateKey() : old.lastGoalDate,
+        unlockedStage: firstCompletionToday ? Math.min(14, old.unlockedStage + 1) : old.unlockedStage,
+      };
+    });
+    setToast(grammarMode ? "+40 XP · Đã hoàn thành 1 bài ngữ pháp" : "+30 XP · Đã hoàn thành 1 chủ đề từ vựng");
+    setPractice(null);
+    setView("home");
+  };
+
+  const nextQuestion = () => {
+    if (!practice) return;
+    if (practice.number === 4) {
+      finishPractice();
+      return;
+    }
+    const question = practice.mode === "grammar"
+      ? grammarQuestion(grammarUnits[practice.sourceIndex])
+      : vocabQuestion(vocabTopics[practice.sourceIndex]);
+    setPractice({ ...practice, question, number: practice.number + 1, answered: false, wasCorrect: false, response: "", explanation: "" });
+  };
+
+  return (
+    <div className="app-shell">
+      {celebrate && <div className="confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} style={{ "--i": index } as React.CSSProperties} />)}</div>}
+      {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+
+      <header className="topbar">
+        <button className="brand" onClick={() => navigate("home")} aria-label="Về trang Hôm nay">
+          <span className="brand-mark">B1</span>
+          <span className="brand-name">B1 Boost<small>Học mỗi ngày</small></span>
+        </button>
+        <nav aria-label="Điều hướng chính">
+          {(["home", "grammar", "vocab", "progress"] as View[]).map((item) => (
+            <button key={item} className={view === item && !practice ? "active" : ""} onClick={() => navigate(item)}>
+              {item === "home" ? "Hôm nay" : item === "grammar" ? "Ngữ pháp" : item === "vocab" ? "Từ vựng" : "Tiến độ"}
+            </button>
+          ))}
+        </nav>
+        <div className="top-actions">
+          <button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Tắt âm thanh" : "Bật âm thanh"}>{sound ? "Âm thanh: Bật" : "Âm thanh: Tắt"}</button>
+          <button className="streak-pill" onClick={() => navigate("progress")} aria-label={`${progress.streak} ngày học liên tiếp`}><span>Chuỗi ngày</span><b>{progress.streak}</b></button>
+          <button className="teacher-button" onClick={() => navigate("teacher")}>Giáo viên</button>
+        </div>
+      </header>
+
+      <main>
+        {practice ? (
+          <PracticeScreen practice={practice} close={() => setPractice(null)} submit={submit} grade={grade} next={nextQuestion} />
+        ) : view === "home" ? (
+          <>
+            <section className="home-hero">
+              <div className="hero-main">
+                <div className="hero-date"><span className="status-dot" />{todayLabel}</div>
+                <p className="overline">KẾ HOẠCH HỌC HÔM NAY</p>
+                <h1>Học một chút.<br /><em>Nhớ thật lâu.</em></h1>
+                <p className="hero-lead">Hoàn thành từng bài ngắn, xem đáp án ngay và duy trì thói quen học tiếng Anh mỗi ngày.</p>
+                <div className="hero-actions">
+                  <button className="primary-button" onClick={() => launch(nextMode)}>{dailyPercent === 100 ? "Luyện thêm một bài" : "Bắt đầu bài tiếp theo"}<span>→</span></button>
+                  <button className="secondary-button" onClick={() => navigate("grammar")}>Xem lộ trình</button>
+                </div>
+                <div className="hero-note"><b>4 câu / bài</b><span>Khoảng 3 phút, có giải thích sau mỗi câu.</span></div>
+              </div>
+
+              <aside className="today-card">
+                <div className="today-head">
+                  <div><p>TIẾN ĐỘ HÔM NAY</p><strong>{dailyPercent}%</strong></div>
+                  <span>{completed}/{totalGoal} bài</span>
+                </div>
+                <div className="overall-track" aria-label={`Hoàn thành ${dailyPercent}%`}><i style={{ width: `${dailyPercent}%` }} /></div>
+                <DailyTask label="Ngữ pháp" description={grammarLeft ? `Còn ${grammarLeft} bài` : "Đã đủ mục tiêu"} value={progress.grammarDone} goal={progress.grammarGoal} tone="green" action={() => launch("grammar")} />
+                <DailyTask label="Từ vựng" description={vocabLeft ? `Còn ${vocabLeft} chủ đề` : "Đã đủ mục tiêu"} value={progress.vocabDone} goal={progress.vocabGoal} tone="orange" action={() => launch("vocab")} />
+                <div className="unlock-note"><span>{progress.unlockedStage}/14</span><p><b>Chặng đang mở</b><small>Hoàn thành mục tiêu ngày để mở chặng kế tiếp.</small></p></div>
+              </aside>
+            </section>
+
+            <section className="content-section">
+              <div className="section-heading">
+                <div><p className="overline">GỢI Ý CHO EM</p><h2>Tiếp tục từ đây</h2></div>
+                <button className="link-button" onClick={() => navigate("grammar")}>Xem toàn bộ lộ trình →</button>
+              </div>
+              <div className="lesson-grid">
+                <LessonCard mode="grammar" index={suggestedGrammar} go={() => launch("grammar", suggestedGrammar)} />
+                <LessonCard mode="vocab" index={suggestedVocab} go={() => launch("vocab", suggestedVocab)} />
+              </div>
+            </section>
+
+            <section className="stats-grid">
+              <StatCard label="CHUỖI NGÀY HỌC" value={`${progress.streak} ngày`} copy="Hoàn thành đủ mục tiêu mỗi ngày để nối dài chuỗi." accent="gold" />
+              <StatCard label="ĐỘ CHÍNH XÁC" value={`${accuracy}%`} copy={progress.total ? `${progress.correct}/${progress.total} câu trả lời đúng.` : "Kết quả sẽ xuất hiện sau câu trả lời đầu tiên."} accent="blue" />
+              <StatCard label="CẦN ÔN LẠI" value={progress.weak[0] || "Chưa có"} copy={progress.weak.length ? "Chủ điểm này xuất hiện trong câu trả lời sai gần đây." : "Hệ thống sẽ tự ghi lại những chủ điểm em thường sai."} accent="coral" />
+            </section>
+          </>
+        ) : view === "grammar" ? (
+          <Library kind="grammar" unlocked={grammarUnlocked}>
+            {stages.map((stage, stageIndex) => {
+              const locked = stageIndex + 1 > progress.unlockedStage;
+              return (
+                <section className={`stage ${locked ? "locked" : ""}`} key={stage.id}>
+                  <div className="stage-rail"><span>{locked ? "—" : stage.id}</span><i /></div>
+                  <div className="stage-content">
+                    <div className="stage-title"><div><small>CHẶNG {stage.id}</small><h2>{stage.grammar[0].title.split(",")[0]} → {stage.vocab.title}</h2></div>{locked && <span>Chưa mở khóa</span>}</div>
+                    <div className="unit-grid">
+                      {stage.grammar.map((unit) => {
+                        const index = grammarUnits.findIndex((item) => item.unit === unit.unit);
+                        return <article className="unit-card" key={unit.unit}><span className="unit-number">UNIT {unit.unit}</span><h3>{unit.title}</h3><p>{unit.summary}</p><div><button disabled={locked} onClick={() => setTheory(unit)}>Xem lý thuyết</button><button disabled={locked} onClick={() => launch("grammar", index)}>Luyện 4 câu →</button></div></article>;
+                      })}
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
+          </Library>
+        ) : view === "vocab" ? (
+          <Library kind="vocab" unlocked={vocabUnlocked}>
+            <div className="topic-grid">
+              {vocabTopics.map((topic, index) => {
+                const locked = index >= progress.unlockedStage;
+                return <article className={`topic-card ${locked ? "locked" : ""}`} key={topic.unit}><div className="topic-head"><span>UNIT {topic.unit}</span><b>{locked ? "Chưa mở" : `${topic.words.length} từ`}</b></div><h2>{topic.title}</h2><p>Chủ đề {index + 1} trong lộ trình từ vựng.</p><div className="word-cloud">{topic.words.slice(0, 6).map((word) => <span key={word.word}>{word.word}</span>)}</div><button disabled={locked} onClick={() => launch("vocab", index)}>{locked ? "Hoàn thành chặng trước để mở" : "Luyện chủ đề này →"}</button></article>;
+              })}
+            </div>
+          </Library>
+        ) : view === "progress" ? (
+          <ProgressPage progress={progress} accuracy={accuracy} />
+        ) : (
+          <TeacherPage progress={progress} setProgress={setProgress} toast={setToast} />
+        )}
+      </main>
+
+      {theory && <TheoryModal unit={theory} close={() => setTheory(null)} go={() => { const index = grammarUnits.findIndex((item) => item.unit === theory.unit); setTheory(null); launch("grammar", index); }} />}
+      <footer><span><b>B1 Boost</b> · Học ít, nhớ lâu.</span><span>Tiến độ được lưu trên thiết bị này.</span></footer>
+    </div>
+  );
+}
+
+function DailyTask({ label, description, value, goal, tone, action }: { label: string; description: string; value: number; goal: number; tone: string; action: () => void }) {
+  const percent = Math.min(100, (value / goal) * 100);
+  return <button className="daily-task" onClick={action}><span className={`task-icon ${tone}`}>{label === "Ngữ pháp" ? "Aa" : "W"}</span><span className="task-copy"><b>{label}<small>{description}</small></b><span className="task-track"><i className={tone} style={{ width: `${percent}%` }} /></span></span><strong>{value}/{goal}</strong></button>;
+}
+
+function LessonCard({ mode, index, go }: { mode: "grammar" | "vocab"; index: number; go: () => void }) {
+  if (mode === "grammar") {
+    const unit = grammarUnits[index];
+    return <article className="lesson-card"><div className="lesson-kicker"><span className="lesson-icon green">Aa</span><small>NGỮ PHÁP · UNIT {unit.unit}</small></div><h3>{unit.title}</h3><p>{unit.summary}</p><div className="lesson-footer"><span>4 câu · khoảng 3 phút</span><button onClick={go}>Bắt đầu →</button></div></article>;
+  }
+  const topic = vocabTopics[index];
+  return <article className="lesson-card"><div className="lesson-kicker"><span className="lesson-icon orange">W</span><small>TỪ VỰNG · UNIT {topic.unit}</small></div><h3>{topic.title}</h3><p>Ôn nghĩa tiếng Việt bằng câu hỏi trắc nghiệm được xáo trộn ở mỗi lượt.</p><div className="lesson-footer"><span>4 câu · khoảng 3 phút</span><button onClick={go}>Bắt đầu →</button></div></article>;
+}
+
+function StatCard({ label, value, copy, accent }: { label: string; value: string; copy: string; accent: string }) {
+  return <article className={`stat-card ${accent}`}><div className="stat-mark" /><small>{label}</small><strong>{value}</strong><p>{copy}</p></article>;
+}
+
+function PracticeScreen({ practice, close, submit, grade, next }: { practice: Practice; close: () => void; submit: (event: React.FormEvent<HTMLFormElement>) => void; grade: (value: string) => void; next: () => void }) {
+  return <section className="practice-page"><div className="practice-top"><button onClick={close} aria-label="Thoát bài luyện">×</button><div><span style={{ width: `${(practice.number / 4) * 100}%` }} /></div><b>Câu {practice.number}/4</b></div><div className="practice-layout"><aside className="practice-context"><span className={practice.mode === "grammar" ? "green" : "orange"}>{practice.mode === "grammar" ? "Aa" : "W"}</span><small>{practice.mode === "grammar" ? "NGỮ PHÁP" : "TỪ VỰNG"} · UNIT {practice.unit}</small><h2>{practice.title}</h2><p>{practice.mode === "grammar" ? "Nhập đáp án bằng tiếng Anh. Dấu câu và chữ hoa không ảnh hưởng kết quả." : "Chọn từ tiếng Anh phù hợp với nghĩa tiếng Việt."}</p><div className="practice-score"><strong>{practice.correct}</strong><span>câu đúng<br />trong lượt này</span></div></aside><article className={`question-card ${practice.answered ? (practice.wasCorrect ? "correct" : "wrong") : ""}`}><div className="question-meta"><span>{practice.question.type}</span><small>CÂU {String(practice.unit * 173 + practice.number * 41).padStart(4, "0")}</small></div><h1>{practice.question.prompt}</h1>{practice.question.choices ? <div className="choice-grid">{practice.question.choices.map((choice, index) => <button key={choice} disabled={practice.answered} className={practice.answered && choice === practice.question.answer ? "answer" : practice.answered && choice === practice.response ? "picked-wrong" : ""} onClick={() => grade(choice)}><span>{String.fromCharCode(65 + index)}</span>{choice}</button>)}</div> : <form onSubmit={submit}><label htmlFor="answer">Câu trả lời của em</label><div className="answer-row"><input id="answer" name="answer" autoFocus autoComplete="off" disabled={practice.answered} placeholder="Nhập đáp án bằng tiếng Anh…" /><button disabled={practice.answered}>Kiểm tra</button></div></form>}{!practice.answered ? <details className="hint"><summary>Xem gợi ý</summary><p>{practice.question.hint}</p></details> : <div className="feedback"><span>{practice.wasCorrect ? "SIUUU!" : "Chưa đúng"}</span><div><b>{practice.wasCorrect ? "Chính xác!" : "Mình xem lại nhé."}</b><p>{practice.explanation}</p></div><button onClick={next}>{practice.number === 4 ? "Hoàn thành bài" : "Câu tiếp theo"} →</button></div>}</article></div></section>;
+}
+
+function PageIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+  return <div className="page-intro"><p className="overline">{eyebrow}</p><h1>{title}</h1><p>{copy}</p></div>;
+}
+
+function Library({ kind, unlocked, children }: { kind: "grammar" | "vocab"; unlocked: number; children: React.ReactNode }) {
+  return <section className="page-wrap"><PageIntro eyebrow={kind === "grammar" ? "LỘ TRÌNH NGỮ PHÁP" : "LỘ TRÌNH TỪ VỰNG"} title={kind === "grammar" ? "Hiểu quy tắc, rồi luyện thật chắc." : "Học đúng nhóm từ trong sách."} copy={kind === "grammar" ? `${unlocked}/28 unit đang mở. Mỗi unit có phần lý thuyết tóm tắt và bài luyện ngắn.` : `${unlocked}/14 chủ đề đang mở. Mỗi lượt gồm 4 câu trắc nghiệm được xáo trộn.`} />{children}</section>;
+}
+
+function ProgressPage({ progress, accuracy }: { progress: Progress; accuracy: number }) {
+  return <section className="page-wrap"><PageIntro eyebrow="TIẾN ĐỘ CÁ NHÂN" title="Nhìn rõ từng bước tiến." copy="Mọi kết quả được lưu ngay trên thiết bị này, không cần tạo tài khoản." /><div className="metric-grid"><Metric value={`${progress.xp}`} label="Tổng điểm XP" accent="green" /><Metric value={`${progress.streak}`} label="Ngày học liên tiếp" accent="gold" /><Metric value={`${accuracy}%`} label="Độ chính xác" accent="blue" /><Metric value={`${progress.unlockedStage}/14`} label="Chặng đã mở" accent="coral" /></div><div className="progress-layout"><article className="chart-card"><div className="card-heading"><div><small>7 NGÀY GẦN ĐÂY</small><h2>Nhịp học trong tuần</h2></div><span>{progress.weekly.reduce((a, b) => a + b, 0)} XP</span></div><div className="bar-chart">{progress.weekly.map((value, index) => <div key={dayLabels[index]}><span>{value || ""}</span><i style={{ height: `${Math.max(8, Math.min(100, value / 2))}%` }} /><small>{dayLabels[index]}</small></div>)}</div></article><article className="focus-card"><small>GỢI Ý ÔN TẬP</small><h2>Chủ điểm cần chú ý</h2>{progress.weak.length ? progress.weak.map((item, index) => <div className="focus-row" key={item}><span>{index + 1}</span><div><b>{item}</b><small>Xuất hiện trong câu trả lời sai gần đây</small></div></div>) : <div className="empty-focus"><span>✓</span><b>Chưa có dữ liệu</b><p>Hoàn thành một bài để hệ thống đưa ra gợi ý.</p></div>}</article></div></section>;
+}
+
+function Metric({ value, label, accent }: { value: string; label: string; accent: string }) {
+  return <article className={`metric ${accent}`}><strong>{value}</strong><span>{label}</span></article>;
+}
+
+function TeacherPage({ progress, setProgress, toast }: { progress: Progress; setProgress: React.Dispatch<React.SetStateAction<Progress>>; toast: (value: string) => void }) {
+  const changeGoal = (key: "grammarGoal" | "vocabGoal", amount: number) => setProgress((old) => ({ ...old, [key]: Math.max(key === "grammarGoal" ? 3 : 2, Math.min(key === "grammarGoal" ? 8 : 4, old[key] + amount)) }));
+  const reset = () => { if (confirm("Xóa toàn bộ chuỗi ngày học, điểm XP và tiến độ trên thiết bị này?")) { setProgress({ ...initial, date: dateKey() }); toast("Đã đặt lại toàn bộ tiến độ."); } };
+  return <section className="page-wrap"><PageIntro eyebrow="GÓC GIÁO VIÊN" title="Thiết lập mục tiêu học mỗi ngày." copy="Các thay đổi chỉ áp dụng trên thiết bị hiện tại, phù hợp cho một học sinh hoặc một máy tính trong lớp." /><div className="teacher-grid"><Setting icon="Aa" label="MỤC TIÊU NGỮ PHÁP" title={`${progress.grammarGoal} bài / ngày`} copy="Mỗi bài gồm 4 câu: chia động từ, sửa lỗi, viết lại câu hoặc điền từ."><Counter value={progress.grammarGoal} minus={() => changeGoal("grammarGoal", -1)} plus={() => changeGoal("grammarGoal", 1)} /></Setting><Setting icon="W" label="MỤC TIÊU TỪ VỰNG" title={`${progress.vocabGoal} chủ đề / ngày`} copy="Mỗi chủ đề gồm 4 câu trắc nghiệm từ danh sách Destination B1."><Counter value={progress.vocabGoal} minus={() => changeGoal("vocabGoal", -1)} plus={() => changeGoal("vocabGoal", 1)} /></Setting><article className="setting-card wide"><div><small>MỞ KHÓA LỘ TRÌNH</small><h2>Đang ở chặng {progress.unlockedStage}/14</h2><p>Mỗi chặng gồm 2 unit ngữ pháp và 1 chủ đề từ vựng theo thứ tự trong sách.</p><div className="stage-dots">{stages.map((stage) => <i key={stage.id} className={stage.id <= progress.unlockedStage ? "done" : ""} />)}</div></div><div className="teacher-actions"><button disabled={progress.unlockedStage >= 14} onClick={() => setProgress((old) => ({ ...old, unlockedStage: Math.min(14, old.unlockedStage + 1) }))}>Mở chặng kế tiếp</button><button className="danger" onClick={reset}>Đặt lại dữ liệu</button></div></article></div><div className="source-note"><span>✓</span><div><b>Nguồn nội dung</b><p>Lý thuyết ngữ pháp và danh sách từ vựng được xây dựng theo Destination B1. Câu luyện được tạo từ mẫu riêng, không sao chép bài tập trong sách.</p></div></div></section>;
+}
+
+function Setting({ icon, label, title, copy, children }: { icon: string; label: string; title: string; copy: string; children: React.ReactNode }) {
+  return <article className="setting-card"><span className="setting-icon">{icon}</span><div><small>{label}</small><h2>{title}</h2><p>{copy}</p></div>{children}</article>;
+}
+
+function Counter({ value, minus, plus }: { value: number; minus: () => void; plus: () => void }) {
+  return <div className="counter"><button onClick={minus} aria-label="Giảm mục tiêu">−</button><span>{value}</span><button onClick={plus} aria-label="Tăng mục tiêu">+</button></div>;
+}
+
+function TheoryModal({ unit, close, go }: { unit: GrammarUnit; close: () => void; go: () => void }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}><article className="theory-modal" role="dialog" aria-modal="true" aria-labelledby="theory-title"><button className="modal-close" onClick={close} aria-label="Đóng">×</button><span className="unit-number">UNIT {unit.unit} · LÝ THUYẾT</span><h1 id="theory-title">{unit.title}</h1><p className="lead">{unit.summary}</p><div className="rule-box"><small>QUY TẮC CẦN NHỚ</small>{unit.rules.map((rule, index) => <div key={rule}><span>{index + 1}</span><p>{rule}</p></div>)}</div><div className="example-box"><small>VÍ DỤ</small><p>{unit.example}</p></div><button className="primary-button full" onClick={go}>Luyện 4 câu về chủ điểm này →</button></article></div>;
+}

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-const title = "B1 Boost — Daily English Practice";
-const description = "Luyện ngữ pháp và từ vựng Destination B1 mỗi ngày với streak, tracking và lộ trình mở khóa.";
+const title = "B1 Boost — Luyện tiếng Anh mỗi ngày";
+const description = "Luyện ngữ pháp và từ vựng Destination B1 mỗi ngày với mục tiêu rõ ràng, chuỗi ngày học và lộ trình mở khóa.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://dangkhue1301.github.io/b1-boost/"),
