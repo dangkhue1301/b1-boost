@@ -42,10 +42,14 @@ test("keeps the complete learning content and responsive styles", async () => {
   assert.match(page, /vocabGoal: 3/);
   assert.match(page, /SIUUU!/);
   assert.match(page, /lastGoalDate/);
+  assert.match(page, /b1-boost-custom-questions/);
+  assert.match(page, /Nạp thêm câu hỏi bằng file CSV/);
+  assert.match(page, /parseCsv/);
   assert.match(content, /export const grammarUnits/);
   assert.match(content, /export const vocabTopics/);
   assert.match(css, /@media\(max-width:900px\)/);
   assert.match(css, /@media\(max-width:620px\)/);
   assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /Khả năng đọc và độ tương phản/);
   assert.match(layout, /lang="vi"/);
 });

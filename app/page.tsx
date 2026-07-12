@@ -20,6 +20,7 @@ type Progress = {
   lastGoalDate: string;
 };
 type Question = { type: string; prompt: string; answer: string; hint: string; choices?: string[] };
+type CustomQuestion = Question & { mode: "grammar" | "vocab"; unit: number };
 type Practice = {
   mode: "grammar" | "vocab";
   title: string;
@@ -48,7 +49,29 @@ const pick = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)]
 const shuffle = <T,>(items: T[]) => [...items].sort(() => Math.random() - 0.5);
 const norm = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/[.,!?]/g, "").replace(/\s+/g, " ").trim();
 
-function grammarQuestion(unit: GrammarUnit): Question {
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [], field = "", quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"' && quoted && text[index + 1] === '"') { field += '"'; index += 1; }
+    else if (char === '"') quoted = !quoted;
+    else if (char === "," && !quoted) { row.push(field.trim()); field = ""; }
+    else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(field.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = []; field = "";
+    } else field += char;
+  }
+  row.push(field.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function csvCell(value: string) { return `"${value.replace(/"/g, '""')}"`; }
+
+function grammarQuestion(unit: GrammarUnit, bank: CustomQuestion[] = []): Question {
   if (unit.unit === 1 && Math.random() > 0.35) {
     const data = pick([
       ["Mia", "study", "studies", "is studying"],
@@ -76,10 +99,13 @@ function grammarQuestion(unit: GrammarUnit): Question {
       hint: "Dùng thì quá khứ tiếp diễn cho hành động đang diễn ra tại một thời điểm trong quá khứ.",
     };
   }
-  return { ...pick(unit.prompts) };
+  const custom = bank.filter((question) => question.mode === "grammar" && question.unit === unit.unit);
+  return { ...pick([...unit.prompts, ...custom]) };
 }
 
-function vocabQuestion(topic: VocabTopic): Question {
+function vocabQuestion(topic: VocabTopic, bank: CustomQuestion[] = []): Question {
+  const custom = bank.filter((question) => question.mode === "vocab" && question.unit === topic.unit);
+  if (custom.length && Math.random() < 0.5) return { ...pick(custom) };
   const target = pick(topic.words);
   const distractors = shuffle(topic.words.filter((word) => word.word !== target.word)).slice(0, 3).map((word) => word.word);
   return {
@@ -91,13 +117,13 @@ function vocabQuestion(topic: VocabTopic): Question {
   };
 }
 
-function makePractice(mode: "grammar" | "vocab", index: number): Practice {
+function makePractice(mode: "grammar" | "vocab", index: number, bank: CustomQuestion[] = []): Practice {
   if (mode === "grammar") {
     const unit = grammarUnits[index];
-    return { mode, title: unit.title, unit: unit.unit, question: grammarQuestion(unit), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
+    return { mode, title: unit.title, unit: unit.unit, question: grammarQuestion(unit, bank), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
   }
   const topic = vocabTopics[index];
-  return { mode, title: topic.title, unit: topic.unit, question: vocabQuestion(topic), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
+  return { mode, title: topic.title, unit: topic.unit, question: vocabQuestion(topic, bank), number: 1, correct: 0, answered: false, wasCorrect: false, response: "", explanation: "", sourceIndex: index };
 }
 
 function playSiu() {
@@ -135,6 +161,7 @@ export default function Home() {
   const [sound, setSound] = useState(true);
   const [toast, setToast] = useState("");
   const [celebrate, setCelebrate] = useState(false);
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
 
   useEffect(() => {
     try {
@@ -150,6 +177,8 @@ export default function Home() {
       }
       const savedSound = localStorage.getItem("b1-boost-sound");
       if (savedSound !== null) setSound(savedSound === "true");
+      const savedQuestions = localStorage.getItem("b1-boost-custom-questions");
+      if (savedQuestions) setCustomQuestions(JSON.parse(savedQuestions));
     } catch { /* Dùng dữ liệu mặc định nếu trình duyệt chặn lưu trữ. */ }
     setReady(true);
   }, []);
@@ -158,7 +187,8 @@ export default function Home() {
     if (!ready) return;
     localStorage.setItem("b1-boost-progress", JSON.stringify(progress));
     localStorage.setItem("b1-boost-sound", String(sound));
-  }, [progress, sound, ready]);
+    localStorage.setItem("b1-boost-custom-questions", JSON.stringify(customQuestions));
+  }, [progress, sound, customQuestions, ready]);
 
   useEffect(() => {
     if (!toast) return;
@@ -187,7 +217,7 @@ export default function Home() {
   const launch = (mode: "grammar" | "vocab", index?: number) => {
     const max = mode === "grammar" ? grammarUnlocked : vocabUnlocked;
     const selected = Math.min(index ?? Math.floor(Math.random() * max), max - 1);
-    setPractice(makePractice(mode, selected));
+    setPractice(makePractice(mode, selected, customQuestions));
   };
 
   const grade = (response: string) => {
@@ -252,8 +282,8 @@ export default function Home() {
       return;
     }
     const question = practice.mode === "grammar"
-      ? grammarQuestion(grammarUnits[practice.sourceIndex])
-      : vocabQuestion(vocabTopics[practice.sourceIndex]);
+      ? grammarQuestion(grammarUnits[practice.sourceIndex], customQuestions)
+      : vocabQuestion(vocabTopics[practice.sourceIndex], customQuestions);
     setPractice({ ...practice, question, number: practice.number + 1, answered: false, wasCorrect: false, response: "", explanation: "" });
   };
 
@@ -360,7 +390,7 @@ export default function Home() {
         ) : view === "progress" ? (
           <ProgressPage progress={progress} accuracy={accuracy} />
         ) : (
-          <TeacherPage progress={progress} setProgress={setProgress} toast={setToast} />
+          <TeacherPage progress={progress} setProgress={setProgress} customQuestions={customQuestions} setCustomQuestions={setCustomQuestions} toast={setToast} />
         )}
       </main>
 
@@ -408,10 +438,48 @@ function Metric({ value, label, accent }: { value: string; label: string; accent
   return <article className={`metric ${accent}`}><strong>{value}</strong><span>{label}</span></article>;
 }
 
-function TeacherPage({ progress, setProgress, toast }: { progress: Progress; setProgress: React.Dispatch<React.SetStateAction<Progress>>; toast: (value: string) => void }) {
+function TeacherPage({ progress, setProgress, customQuestions, setCustomQuestions, toast }: { progress: Progress; setProgress: React.Dispatch<React.SetStateAction<Progress>>; customQuestions: CustomQuestion[]; setCustomQuestions: React.Dispatch<React.SetStateAction<CustomQuestion[]>>; toast: (value: string) => void }) {
   const changeGoal = (key: "grammarGoal" | "vocabGoal", amount: number) => setProgress((old) => ({ ...old, [key]: Math.max(key === "grammarGoal" ? 3 : 2, Math.min(key === "grammarGoal" ? 8 : 4, old[key] + amount)) }));
   const reset = () => { if (confirm("Xóa toàn bộ chuỗi ngày học, điểm XP và tiến độ trên thiết bị này?")) { setProgress({ ...initial, date: dateKey() }); toast("Đã đặt lại toàn bộ tiến độ."); } };
-  return <section className="page-wrap"><PageIntro eyebrow="GÓC GIÁO VIÊN" title="Thiết lập mục tiêu học mỗi ngày." copy="Các thay đổi chỉ áp dụng trên thiết bị hiện tại, phù hợp cho một học sinh hoặc một máy tính trong lớp." /><div className="teacher-grid"><Setting icon="Aa" label="MỤC TIÊU NGỮ PHÁP" title={`${progress.grammarGoal} bài / ngày`} copy="Mỗi bài gồm 4 câu: chia động từ, sửa lỗi, viết lại câu hoặc điền từ."><Counter value={progress.grammarGoal} minus={() => changeGoal("grammarGoal", -1)} plus={() => changeGoal("grammarGoal", 1)} /></Setting><Setting icon="W" label="MỤC TIÊU TỪ VỰNG" title={`${progress.vocabGoal} chủ đề / ngày`} copy="Mỗi chủ đề gồm 4 câu trắc nghiệm từ danh sách Destination B1."><Counter value={progress.vocabGoal} minus={() => changeGoal("vocabGoal", -1)} plus={() => changeGoal("vocabGoal", 1)} /></Setting><article className="setting-card wide"><div><small>MỞ KHÓA LỘ TRÌNH</small><h2>Đang ở chặng {progress.unlockedStage}/14</h2><p>Mỗi chặng gồm 2 unit ngữ pháp và 1 chủ đề từ vựng theo thứ tự trong sách.</p><div className="stage-dots">{stages.map((stage) => <i key={stage.id} className={stage.id <= progress.unlockedStage ? "done" : ""} />)}</div></div><div className="teacher-actions"><button disabled={progress.unlockedStage >= 14} onClick={() => setProgress((old) => ({ ...old, unlockedStage: Math.min(14, old.unlockedStage + 1) }))}>Mở chặng kế tiếp</button><button className="danger" onClick={reset}>Đặt lại dữ liệu</button></div></article></div><div className="source-note"><span>✓</span><div><b>Nguồn nội dung</b><p>Lý thuyết ngữ pháp và danh sách từ vựng được xây dựng theo Destination B1. Câu luyện được tạo từ mẫu riêng, không sao chép bài tập trong sách.</p></div></div></section>;
+  const grammarCount = customQuestions.filter((question) => question.mode === "grammar").length;
+  const vocabCount = customQuestions.length - grammarCount;
+  const downloadCsv = (questions?: CustomQuestion[]) => {
+    const header = "phan,unit,dang_bai,cau_hoi,dap_an,goi_y,lua_chon";
+    const sample = [
+      ["ngữ pháp", "1", "Chia động từ", "Mia usually ___ (study) after dinner.", "studies", "Chủ ngữ ngôi thứ ba số ít.", ""],
+      ["từ vựng", "3", "Chọn từ đúng", "Từ nào có nghĩa là ghi điểm?", "score", "Chọn từ thuộc chủ đề Fun and games.", "score|beat|train|support"],
+    ];
+    const rows = questions?.length ? questions.map((question) => [question.mode === "grammar" ? "ngữ pháp" : "từ vựng", String(question.unit), question.type, question.prompt, question.answer, question.hint, question.choices?.join("|") || ""]) : sample;
+    const csv = `\uFEFF${header}\n${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = questions?.length ? "b1-boost-ngan-hang-cau-hoi.csv" : "b1-boost-file-mau.csv"; anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  const importCsv = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const rows = parseCsv((await file.text()).replace(/^\uFEFF/, ""));
+      const headers = rows[0]?.map((value) => value.toLowerCase().trim()) || [];
+      const column = (name: string) => headers.indexOf(name);
+      if (["phan", "unit", "dang_bai", "cau_hoi", "dap_an"].some((name) => column(name) < 0)) throw new Error("Thiếu cột bắt buộc");
+      const imported: CustomQuestion[] = rows.slice(1).map((row) => {
+        const modeText = row[column("phan")]?.toLowerCase() || "";
+        const mode = modeText.includes("ngữ") || modeText === "grammar" ? "grammar" : modeText.includes("từ") || modeText === "vocab" ? "vocab" : null;
+        const unit = Number(row[column("unit")]);
+        const validUnit = mode === "grammar" ? unit >= 1 && unit <= 28 : mode === "vocab" ? vocabTopics.some((topic) => topic.unit === unit) : false;
+        if (!mode || !validUnit || !row[column("cau_hoi")] || !row[column("dap_an")]) throw new Error("Có dòng sai phần, unit, câu hỏi hoặc đáp án");
+        const choices = row[column("lua_chon")]?.split("|").map((choice) => choice.trim()).filter(Boolean);
+        return { mode, unit, type: row[column("dang_bai")] || "Câu bổ sung", prompt: row[column("cau_hoi")], answer: row[column("dap_an")], hint: row[column("goi_y")] || "Hãy nhớ lại quy tắc của unit này.", choices: choices?.length ? choices : undefined };
+      });
+      setCustomQuestions((old) => [...old, ...imported]);
+      toast(`Đã nhập ${imported.length} câu hỏi mới.`);
+    } catch (error) { alert(`Không thể nhập file: ${error instanceof Error ? error.message : "định dạng không hợp lệ"}. Hãy dùng file mẫu để kiểm tra lại.`); }
+    event.target.value = "";
+  };
+  const clearBank = () => { if (customQuestions.length && confirm(`Xóa ${customQuestions.length} câu hỏi đã nhập trên thiết bị này?`)) { setCustomQuestions([]); toast("Đã xóa ngân hàng câu hỏi bổ sung."); } };
+  return <section className="page-wrap"><PageIntro eyebrow="GÓC GIÁO VIÊN" title="Thiết lập mục tiêu học mỗi ngày." copy="Các thay đổi chỉ áp dụng trên thiết bị hiện tại, phù hợp cho một học sinh hoặc một máy tính trong lớp." /><div className="teacher-grid"><Setting icon="Aa" label="MỤC TIÊU NGỮ PHÁP" title={`${progress.grammarGoal} bài / ngày`} copy="Mỗi bài gồm 4 câu: chia động từ, sửa lỗi, viết lại câu hoặc điền từ."><Counter value={progress.grammarGoal} minus={() => changeGoal("grammarGoal", -1)} plus={() => changeGoal("grammarGoal", 1)} /></Setting><Setting icon="W" label="MỤC TIÊU TỪ VỰNG" title={`${progress.vocabGoal} chủ đề / ngày`} copy="Mỗi chủ đề gồm 4 câu trắc nghiệm từ danh sách Destination B1."><Counter value={progress.vocabGoal} minus={() => changeGoal("vocabGoal", -1)} plus={() => changeGoal("vocabGoal", 1)} /></Setting><article className="setting-card wide"><div><small>MỞ KHÓA LỘ TRÌNH</small><h2>Đang ở chặng {progress.unlockedStage}/14</h2><p>Mỗi chặng gồm 2 unit ngữ pháp và 1 chủ đề từ vựng theo thứ tự trong sách.</p><div className="stage-dots">{stages.map((stage) => <i key={stage.id} className={stage.id <= progress.unlockedStage ? "done" : ""} />)}</div></div><div className="teacher-actions"><button disabled={progress.unlockedStage >= 14} onClick={() => setProgress((old) => ({ ...old, unlockedStage: Math.min(14, old.unlockedStage + 1) }))}>Mở chặng kế tiếp</button><button className="danger" onClick={reset}>Đặt lại dữ liệu</button></div></article></div><article className="question-bank"><div className="bank-heading"><div><small>NGÂN HÀNG CÂU HỎI</small><h2>Nạp thêm câu hỏi bằng file CSV</h2><p>Tải file mẫu, điền câu hỏi trong Excel rồi nhập lại. Câu mới sẽ được trộn vào đúng Unit khi học sinh luyện tập.</p></div><div className="bank-total"><strong>{customQuestions.length}</strong><span>câu đã thêm<small>{grammarCount} ngữ pháp · {vocabCount} từ vựng</small></span></div></div><div className="bank-steps"><span><b>1</b>Tải file mẫu</span><span><b>2</b>Điền câu hỏi trong Excel</span><span><b>3</b>Nhập file trở lại</span></div><div className="bank-actions"><button onClick={() => downloadCsv()}>Tải file mẫu CSV</button><label className="upload-button">Nhập file CSV<input type="file" accept=".csv,text/csv" onChange={importCsv} /></label><button disabled={!customQuestions.length} onClick={() => downloadCsv(customQuestions)}>Xuất bản sao lưu</button><button className="danger" disabled={!customQuestions.length} onClick={clearBank}>Xóa câu đã thêm</button></div><p className="bank-note"><b>Lưu ý:</b> ngân hàng bổ sung hiện được lưu trên thiết bị này. Hãy dùng “Xuất bản sao lưu” trước khi đổi máy hoặc xóa dữ liệu trình duyệt.</p></article><div className="source-note"><span>✓</span><div><b>Nguồn nội dung</b><p>Lý thuyết ngữ pháp và danh sách từ vựng được xây dựng theo Destination B1. Câu luyện được tạo từ mẫu riêng, không sao chép bài tập trong sách.</p></div></div></section>;
 }
 
 function Setting({ icon, label, title, copy, children }: { icon: string; label: string; title: string; copy: string; children: React.ReactNode }) {
